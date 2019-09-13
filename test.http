@@ -1,0 +1,13 @@
+GET http://localhost:8080/memcache?key=a&key=b&key=c
+
+###
+
+POST http://localhost:8080/memcache
+Content-Type: application/json
+
+{
+    "Items": [
+        {"Key": "a", "Value": "YWFhYWFhYQ=="},
+        {"Key": "b", "Value": "YWFhYWFhYQ=="}
+    ]
+}
