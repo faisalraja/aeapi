@@ -1,4 +1,5 @@
 runtime: go111
+service: aeapi
 
 automatic_scaling:
   max_concurrent_requests: 50
@@ -6,6 +7,13 @@ automatic_scaling:
   target_throughput_utilization: 0.9
   max_instances: 10
   min_instances: 0
+
+skip_files:
+- ^(.*/)?#.*#$
+- ^(.*/)?.*~$
+- ^(.*/)?.*\.py[co]$
+- ^(.*/)?.*/RCS/.*$
+- ^(.*/)?\..*$
 
 handlers:
 - url: /.*
