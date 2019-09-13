@@ -4,6 +4,12 @@ Expose JSON endpoints for internal app engine 1st gen features that hasn't been 
 
 This will mostly be used for appengine search api. Plus a structure starter for golang backend for next gen app engine apps.
 
+## Run Locally & Deploy
+
+    dev_appserver.py app.yaml
+  
+    gcloud app deploy app.yaml --project=project-id --
+
 ## Endpoints
 
     POST /memcache
