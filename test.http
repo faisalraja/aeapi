@@ -21,5 +21,10 @@ X-Secret: {{secret}}
 
 ###
 
-DELETE {{baseUrl}}/memcache?key=a&key=b
+DELETE {{baseUrl}}/memcache?key=a
+X-Secret: {{secret}}
+
+###
+
+GET {{baseUrl}}/search/sample?q=test
 X-Secret: {{secret}}

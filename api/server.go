@@ -27,9 +27,15 @@ func Router() *mux.Router {
 	}
 	sr := r.PathPrefix("/api").Subrouter()
 	sr.Use(srv.auth)
-	sr.HandleFunc("/memcache", srv.handleGetMemcache()).Methods("GET")
-	sr.HandleFunc("/memcache", srv.handlePostMemcache()).Methods("POST")
-	sr.HandleFunc("/memcache", srv.handleDeleteMemcache()).Methods("DELETE")
+	// memcache
+	srm := sr.PathPrefix("/memcache").Subrouter()
+	srm.HandleFunc("", srv.handleGetMemcache()).Methods("GET")
+	srm.HandleFunc("", srv.handlePostMemcache()).Methods("POST")
+	srm.HandleFunc("", srv.handleDeleteMemcache()).Methods("DELETE")
+
+	// search
+	srs := sr.PathPrefix("/search").Subrouter()
+	srs.HandleFunc("/{index}", srv.handleGetSearch()).Methods("GET")
 
 	return r
 }
