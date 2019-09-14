@@ -8,6 +8,6 @@ import (
 )
 
 func main() {
-	http.Handle("/", api.Router())
+	http.Handle("/", api.NewServer())
 	appengine.Main()
 }

@@ -8,20 +8,22 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 )
 
-type server struct {
+// Server defines how api request is handled
+type Server struct {
 	secret string
 	router *mux.Router
 }
 
-// Router returns a handler that implements the Handler interface
-func Router() *mux.Router {
+// NewServer returns the instance of api server that implements the Handler interface
+func NewServer() *Server {
 	r := mux.NewRouter()
 
-	srv := &server{router: r, secret: os.Getenv("SECRET")}
+	srv := &Server{router: r, secret: os.Getenv("SECRET")}
 	if srv.secret == "" {
 		panic("SECRET in app.yaml is empty")
 	}
@@ -37,10 +39,34 @@ func Router() *mux.Router {
 	srs := sr.PathPrefix("/search").Subrouter()
 	srs.HandleFunc("/{index}", srv.handleGetSearch()).Methods("GET")
 
-	return r
+	// catch all
+	r.PathPrefix("/").HandlerFunc(srv.handleCatchAll())
+
+	return srv
 }
 
-func (s *server) hasErr(w http.ResponseWriter, code int, err error) bool {
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	st := time.Now()
+	s.router.ServeHTTP(w, r)
+	if tt := time.Now().Sub(st).Seconds(); tt >= 1 {
+		log.Printf("[SLOW] warning request: %s %s took %f seconds", r.Method, r.RequestURI, tt)
+	}
+}
+
+func (s *Server) handler(f func(r *http.Request) (int, interface{})) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		code, result := f(r)
+		if result != nil {
+			if err, ok := result.(error); ok {
+				s.writeError(w, code, err)
+				return
+			}
+		}
+		s.writeJSON(w, code, result)
+	}
+}
+
+func (s *Server) writeError(w http.ResponseWriter, code int, err error) bool {
 	if err == nil {
 		return false
 	}
@@ -57,7 +83,7 @@ func (s *server) hasErr(w http.ResponseWriter, code int, err error) bool {
 	return true
 }
 
-func (s *server) JSON(w http.ResponseWriter, code int, resp interface{}) {
+func (s *Server) writeJSON(w http.ResponseWriter, code int, resp interface{}) {
 	w.WriteHeader(code)
 	if resp == nil {
 		return
@@ -68,7 +94,7 @@ func (s *server) JSON(w http.ResponseWriter, code int, resp interface{}) {
 	}
 }
 
-func (s *server) readJSON(r *http.Request, out interface{}) error {
+func (s *Server) readJSON(r *http.Request, out interface{}) error {
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
 	if err != nil {
 		return err
@@ -82,12 +108,18 @@ func (s *server) readJSON(r *http.Request, out interface{}) error {
 	return nil
 }
 
-func (s *server) auth(next http.Handler) http.Handler {
+func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Secret") != s.secret {
-			s.hasErr(w, http.StatusForbidden, fmt.Errorf("Secret does not match"))
+			s.writeError(w, http.StatusForbidden, fmt.Errorf("Secret does not match"))
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) handleCatchAll() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.writeError(w, http.StatusNotFound, fmt.Errorf("Catch all not found"))
+	}
 }
