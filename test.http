@@ -1,9 +1,16 @@
-GET http://localhost:8080/memcache?key=a&key=b&key=c
+@baseUrl = http://localhost:8080/api
+@secret = abc123
 
 ###
 
-POST http://localhost:8080/memcache
+GET {{baseUrl}}/memcache?key=a&key=b&key=c
+X-Secret: {{secret}}
+
+###
+
+POST {{baseUrl}}/memcache
 Content-Type: application/json
+X-Secret: {{secret}}
 
 {
     "Items": [
@@ -11,3 +18,8 @@ Content-Type: application/json
         {"Key": "b", "Value": "YWFhYWFhYQ=="}
     ]
 }
+
+###
+
+DELETE {{baseUrl}}/memcache?key=a&key=b
+X-Secret: {{secret}}
