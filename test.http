@@ -26,7 +26,7 @@ X-Secret: {{secret}}
 
 ###
 
-GET {{baseUrl}}/search/sampleindex?q=world
+GET {{baseUrl}}/search/sampleindex?q=world&Facets=ram|4---12|1
 X-Secret: {{secret}}
 
 ###
@@ -43,7 +43,7 @@ X-Secret: {{secret}}
             {"Name": "total", "Value": 20.25},
             {"Name": "content", "Value": "lorem ipsum"},
             {"Name": "type", "Facet": true, "Value": "computer"},
-            {"Name": "ram", "Facet": true, "Value": 12.0}
+            {"Name": "ram", "Facet": true, "Value": 12}
         ]},
         {"ID": "t2", "Fields": [
             {"Name": "hello", "Type": "atom", "Value": "earth"},
@@ -51,7 +51,7 @@ X-Secret: {{secret}}
             {"Name": "total", "Value": 30},
             {"Name": "content", "Value": "mister mice"},
             {"Name": "type", "Facet": true, "Value": "mobile"},
-            {"Name": "ram", "Facet": true, "Value": 4.0}
+            {"Name": "ram", "Facet": true, "Value": 4}
         ]}
     ]
 }

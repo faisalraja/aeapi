@@ -2,9 +2,10 @@ package api
 
 import (
 	"fmt"
-	"log"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/araddon/dateparse"
 	"github.com/gorilla/mux"
@@ -32,6 +33,8 @@ func (di *docIndex) Save() ([]search.Field, *search.DocumentMetadata, error) {
 func (s *Server) handleGetSearch() http.HandlerFunc {
 	type facetResult struct {
 		Value interface{}
+		Start float64
+		End   float64
 		Count int
 	}
 	type facet struct {
@@ -63,8 +66,35 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 		if len(query["Cursor"]) == 1 {
 			opt.Cursor = search.Cursor(query["Cursor"][0])
 		}
-		opt.Facets = []search.FacetSearchOption{
-			search.AutoFacetDiscovery(0, 0),
+		if len(query["Facets"]) > 0 {
+			if query["Facets"][0] == "auto" {
+				opt.Facets = append(opt.Facets, search.AutoFacetDiscovery(0, 0))
+			} else {
+				for _, facet := range query["Facets"] {
+					ff := strings.Split(facet, "|")
+					vals := make([]interface{}, 0)
+					if len(ff) >= 2 {
+						for _, fv := range strings.Split(ff[1], ",") {
+							if strings.Contains(fv, "---") {
+								rn := strings.Split(fv, "---")
+								sr := search.Range{}
+								sr.Start, _ = strconv.ParseFloat(rn[0], 64)
+								sr.End, _ = strconv.ParseFloat(rn[1], 64)
+								vals = append(vals, sr)
+							} else {
+								vals = append(vals, search.Atom(fv))
+							}
+						}
+					}
+					if len(ff) >= 3 {
+						if l, err := strconv.Atoi(ff[2]); err == nil {
+							vals = append(vals, search.AtLeast(float64(l)))
+						}
+					}
+					f := search.FacetDiscovery(ff[0], vals...)
+					opt.Facets = append(opt.Facets, f)
+				}
+			}
 		}
 
 		var resp response
@@ -104,10 +134,20 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 				if j == 0 {
 					resp.Facets[i] = facet{Name: f.Name, Result: make([]facetResult, len(results))}
 				}
-				resp.Facets[i].Result = append(resp.Facets[i].Result, facetResult{Value: f.Value, Count: f.Count})
+				fr := facetResult{Count: f.Count}
+				if r, ok := f.Value.(search.Range); ok {
+					if !math.IsInf(r.Start, 0) {
+						fr.Start = r.Start
+					}
+					if !math.IsInf(r.End, 0) {
+						fr.End = r.End
+					}
+				} else {
+					fr.Value = f.Value
+				}
+				resp.Facets[i].Result = append(resp.Facets[i].Result, fr)
 			}
 		}
-		log.Printf("Facets: %v", resp.Facets)
 		if opt.IDsOnly {
 			return http.StatusOK, ids
 		}
