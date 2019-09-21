@@ -38,6 +38,7 @@ func NewServer() *Server {
 	// search
 	srs := sr.PathPrefix("/search").Subrouter()
 	srs.HandleFunc("/{index}", srv.handleGetSearch()).Methods("GET")
+	srs.HandleFunc("/{index}", srv.handlePutSearch()).Methods("PUT")
 
 	// catch all
 	r.PathPrefix("/").HandlerFunc(srv.handleCatchAll())

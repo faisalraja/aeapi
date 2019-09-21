@@ -26,5 +26,32 @@ X-Secret: {{secret}}
 
 ###
 
-GET {{baseUrl}}/search/sample?q=test
+GET {{baseUrl}}/search/sampleindex?q=world
 X-Secret: {{secret}}
+
+###
+
+PUT {{baseUrl}}/search/sampleindex
+Content-Type: application/json
+X-Secret: {{secret}}
+
+{
+    "Docs": [
+        {"ID": "t1", "Fields": [
+            {"Name": "hello", "Type": "atom", "Value": "world"},
+            {"Name": "date", "Type": "date", "Value": "1/2/2020"},
+            {"Name": "total", "Value": 20.25},
+            {"Name": "content", "Value": "lorem ipsum"},
+            {"Name": "type", "Facet": true, "Value": "computer"},
+            {"Name": "ram", "Facet": true, "Value": 12.0}
+        ]},
+        {"ID": "t2", "Fields": [
+            {"Name": "hello", "Type": "atom", "Value": "earth"},
+            {"Name": "date", "Type": "date", "Value": "1/3/2020"},
+            {"Name": "total", "Value": 30},
+            {"Name": "content", "Value": "mister mice"},
+            {"Name": "type", "Facet": true, "Value": "mobile"},
+            {"Name": "ram", "Facet": true, "Value": 4.0}
+        ]}
+    ]
+}
