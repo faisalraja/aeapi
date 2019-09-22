@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/appengine"
+
 	"github.com/araddon/dateparse"
 	"github.com/gorilla/mux"
 	"google.golang.org/appengine/search"
@@ -157,11 +159,13 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 
 func (s *Server) handlePutSearch() http.HandlerFunc {
 	type field struct {
-		Name  string
-		Value interface{}
-		Type  string
-		Facet bool
-		Rank  int
+		Name     string
+		Value    interface{}
+		Type     string
+		Facet    bool
+		Rank     int
+		Derived  bool
+		Language string
 	}
 	type doc struct {
 		ID     string
@@ -199,8 +203,10 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 					}
 					d.Meta.Facets = append(d.Meta.Facets, facet)
 				}
-				f := search.Field{Name: field.Name}
+				f := search.Field{Name: field.Name, Derived: field.Derived, Language: field.Language}
 				switch field.Type {
+				case "html":
+					f.Value = search.HTML(field.Value.(string))
 				case "atom":
 					f.Value = search.Atom(field.Value.(string))
 				case "date", "datetime":
@@ -210,6 +216,13 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 					} else {
 						f.Value = t
 					}
+				case "geopoint":
+					v := field.Value.(string)
+					ll := strings.Split(v, ",")
+					gp := appengine.GeoPoint{}
+					gp.Lat, _ = strconv.ParseFloat(ll[0], 64)
+					gp.Lng, _ = strconv.ParseFloat(ll[1], 64)
+					f.Value = gp
 				default:
 					f.Value = field.Value
 				}
@@ -223,5 +236,23 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 			return http.StatusInternalServerError, err
 		}
 		return http.StatusOK, ids
+	})
+}
+
+func (s *Server) handleDeleteSearch() http.HandlerFunc {
+	return s.handler(func(r *http.Request) (int, interface{}) {
+		ids := r.URL.Query()["id"]
+		if len(ids) == 0 {
+			return http.StatusBadRequest, fmt.Errorf("ids not found")
+		}
+		idx := mux.Vars(r)["index"]
+		index, err := search.Open(idx)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		if err := index.DeleteMulti(r.Context(), ids); err != nil {
+			return http.StatusInternalServerError, err
+		}
+		return http.StatusOK, nil
 	})
 }
