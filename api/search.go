@@ -19,9 +19,9 @@ import (
 )
 
 type docIndex struct {
-	ID     string
-	Fields []search.Field
-	Meta   *search.DocumentMetadata
+	ID     string                   `json:"id"`
+	Fields []search.Field           `json:"fields,omitempty"`
+	Meta   *search.DocumentMetadata `json:"meta,omitempty"`
 }
 
 // Load document index
@@ -37,26 +37,22 @@ func (di *docIndex) Save() ([]search.Field, *search.DocumentMetadata, error) {
 }
 
 func (s *Server) handleGetSearch() http.HandlerFunc {
-	type facetResult struct {
+	type facet struct {
 		Value interface{} `json:"value"`
 		Start float64     `json:"start"`
 		End   float64     `json:"end"`
 		Count int         `json:"count"`
 	}
-	type facet struct {
-		Name   string        `json:"name"`
-		Result []facetResult `json:"result"`
-	}
 	type response struct {
-		Result []docIndex `json:"result"`
-		Facets []facet    `json:"facets"`
-		Cursor string     `json:"cursor"`
+		Result []docIndex         `json:"result"`
+		Facets map[string][]facet `json:"facets"`
+		Cursor string             `json:"cursor"`
 	}
 	return s.handler(func(r *http.Request) interface{} {
 		vars := mux.Vars(r)
 		index := vars["index"]
 		ctx := r.Context()
-		ns := s.prefixNS(ctx, vars["ns"])
+		ns := prefixNS(ctx, vars["ns"])
 		ctx, err := appengine.Namespace(ctx, ns)
 		if err != nil {
 			return err
@@ -64,18 +60,22 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 		query := r.URL.Query()
 
 		type cachedDocs struct {
-			Found bool
-			IDs   []string
-			Data  []byte
+			Found   bool
+			IDsOnly bool
+			IDs     []string
+			Data    []byte
 		}
 		var resp response
 		cd := &cachedDocs{}
-		cKey := s.SearchCacheKey(ctx, ns, index, query)
-		if err := s.GetCache(ctx, cKey, cd); err != nil {
+		cKey := searchCacheKey(ctx, ns, index, query)
+		if err := getCache(ctx, cKey, cd); err != nil {
 			log.Println("GetCache: error", err)
 		}
 		if cd.Found {
-			if cd.IDs != nil {
+			if cd.IDsOnly {
+				if cd.IDs == nil {
+					return make([]string, 0)
+				}
 				return cd.IDs
 			}
 			if err := json.Unmarshal(cd.Data, &resp); err != nil {
@@ -89,6 +89,7 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 			return badErr{m: "Query string missing"}
 		}
 		opt := &search.SearchOptions{}
+		withMeta := false
 		if len(query["limit"]) == 1 {
 			limit, _ := strconv.Atoi(query["limit"][0])
 			opt.Limit = limit
@@ -98,6 +99,9 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 		}
 		if len(query["fields"]) > 0 {
 			opt.Fields = query["fields"]
+		}
+		if len(query["meta"]) > 0 {
+			withMeta = true
 		}
 		if len(query["cursor"]) == 1 {
 			opt.Cursor = search.Cursor(query["cursor"][0])
@@ -147,11 +151,18 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 				break
 			}
 			if err != nil {
-				return err
+				log.Println("SearchError", err)
+				break
 			}
 			if id != "" {
 				d.ID = id
 				ids = append(ids, id)
+				if len(opt.Fields) == 0 {
+					d.Fields = nil
+				}
+				if !withMeta {
+					d.Meta = nil
+				}
 				resp.Result = append(resp.Result, d)
 			}
 		}
@@ -160,30 +171,29 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 			ids = make([]string, 0)
 		}
 		facets, err := it.Facets()
-		if err != nil {
-			return err
-		}
-		resp.Facets = make([]facet, len(facets))
-		for i, results := range facets {
-			for j, f := range results {
-				if j == 0 {
-					resp.Facets[i] = facet{Name: f.Name, Result: make([]facetResult, len(results))}
-				}
-				fr := facetResult{Count: f.Count}
-				if r, ok := f.Value.(search.Range); ok {
-					if !math.IsInf(r.Start, 0) {
-						fr.Start = r.Start
+		if err == nil {
+			resp.Facets = make(map[string][]facet)
+			for _, results := range facets {
+				for _, f := range results {
+					fr := facet{Count: f.Count}
+					if r, ok := f.Value.(search.Range); ok {
+						if !math.IsInf(r.Start, 0) {
+							fr.Start = r.Start
+						}
+						if !math.IsInf(r.End, 0) {
+							fr.End = r.End
+						}
+					} else {
+						fr.Value = f.Value
 					}
-					if !math.IsInf(r.End, 0) {
-						fr.End = r.End
-					}
-				} else {
-					fr.Value = f.Value
+					resp.Facets[f.Name] = append(resp.Facets[f.Name], fr)
 				}
-				resp.Facets[i].Result = append(resp.Facets[i].Result, fr)
 			}
+		} else {
+			log.Println("FacetsErr", err)
 		}
 		cd.Found = true
+		cd.IDsOnly = opt.IDsOnly
 		if opt.IDsOnly {
 			cd.IDs = ids
 		} else {
@@ -194,7 +204,7 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 			}
 		}
 		if cd.Found {
-			if err := s.SetCache(ctx, cKey, cd, time.Hour*12); err != nil {
+			if err := setCache(ctx, cKey, cd, time.Hour*12); err != nil {
 				log.Println("SetCache error", err)
 			}
 		}
@@ -226,7 +236,7 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 		vars := mux.Vars(r)
 		idx := vars["index"]
 		ctx := r.Context()
-		ns := s.prefixNS(ctx, vars["ns"])
+		ns := prefixNS(ctx, vars["ns"])
 		ctx, err := appengine.Namespace(ctx, ns)
 		if err != nil {
 			return err
@@ -243,6 +253,7 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 			wg     sync.WaitGroup
 			mu     sync.Mutex
 			errs   []error
+			err1   error
 			err2   error
 			ids    []string
 			docs   []interface{}
@@ -313,14 +324,21 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 			wg.Add(1)
 			go putDocs(docIds, docs)
 		}
-		wg.Add(1)
+		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			err2 = s.ResetSearchCacheKey(ctx, ns, idx)
+			err2 = resetSearchCacheKey(ctx, ns, idx)
+		}()
+		go func() {
+			defer wg.Done()
+			err1 = newDelayedReset(ctx, ns, idx)
 		}()
 		wg.Wait()
 		if len(errs) > 0 {
 			return fmt.Errorf("put errs: %v", errs)
+		}
+		if err1 != nil {
+			return err1
 		}
 		if err2 != nil {
 			return err2
@@ -338,7 +356,7 @@ func (s *Server) handleDeleteSearch() http.HandlerFunc {
 		vars := mux.Vars(r)
 		idx := vars["index"]
 		ctx := r.Context()
-		ns := s.prefixNS(ctx, vars["ns"])
+		ns := prefixNS(ctx, vars["ns"])
 		ctx, err := appengine.Namespace(ctx, ns)
 		if err != nil {
 			return err
@@ -351,15 +369,20 @@ func (s *Server) handleDeleteSearch() http.HandlerFunc {
 			wg   sync.WaitGroup
 			err1 error
 			err2 error
+			err3 error
 		)
-		wg.Add(2)
+		wg.Add(3)
 		go func() {
 			defer wg.Done()
 			err1 = index.DeleteMulti(ctx, ids)
 		}()
 		go func() {
 			defer wg.Done()
-			err2 = s.ResetSearchCacheKey(ctx, ns, idx)
+			err2 = resetSearchCacheKey(ctx, ns, idx)
+		}()
+		go func() {
+			defer wg.Done()
+			err3 = newDelayedReset(ctx, ns, idx)
 		}()
 		wg.Wait()
 		if err1 != nil {
@@ -368,6 +391,18 @@ func (s *Server) handleDeleteSearch() http.HandlerFunc {
 		if err2 != nil {
 			return err2
 		}
+		if err3 != nil {
+			return err3
+		}
 		return nil
+	})
+}
+
+func (s *Server) handleResetSearch() http.HandlerFunc {
+	return s.handler(func(r *http.Request) interface{} {
+		ctx := r.Context()
+		ns := r.FormValue("ns")
+		index := r.FormValue("index")
+		return resetSearchCacheKey(ctx, ns, index)
 	})
 }

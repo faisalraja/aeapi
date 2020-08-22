@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"google.golang.org/appengine/memcache"
+	"google.golang.org/appengine/taskqueue"
 )
 
 type (
@@ -62,9 +63,10 @@ func NewServer() *Server {
 
 	// search
 	srs := sr.PathPrefix("/search").Subrouter()
-	srs.HandleFunc("/{ns}/{index}", srv.handleGetSearch()).Methods("GET")
-	srs.HandleFunc("/{ns}/{index}", srv.handlePutSearch()).Methods("PUT")
-	srs.HandleFunc("/{ns}/{index}", srv.handleDeleteSearch()).Methods("DELETE")
+	srs.HandleFunc("/reset", srv.handleResetSearch()).Methods(http.MethodPost)
+	srs.HandleFunc("/{ns}/{index}", srv.handleGetSearch()).Methods(http.MethodGet)
+	srs.HandleFunc("/{ns}/{index}", srv.handlePutSearch()).Methods(http.MethodPut)
+	srs.HandleFunc("/{ns}/{index}", srv.handleDeleteSearch()).Methods(http.MethodDelete)
 
 	// catch all
 	r.PathPrefix("/").HandlerFunc(srv.handleCatchAll())
@@ -150,19 +152,12 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			r = r.WithContext(context.WithValue(ctx, KeyEnv, "live"))
 		} else if secret == s.testSecret {
 			r = r.WithContext(context.WithValue(ctx, KeyEnv, "test"))
-		} else {
+		} else if r.URL.Path != "/api/search/reset" { // protected in app.yaml
 			s.writeError(w, errAuth)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func (s *Server) prefixNS(ctx context.Context, ns string) string {
-	if env, ok := ctx.Value(KeyEnv).(string); ok {
-		ns = env + "_" + ns
-	}
-	return ns
 }
 
 func (s *Server) handleCatchAll() http.HandlerFunc {
@@ -171,9 +166,14 @@ func (s *Server) handleCatchAll() http.HandlerFunc {
 	}
 }
 
-// SetCache creates a memcache cache
-func (s *Server) SetCache(ctx context.Context, key string, value interface{}, expire time.Duration) error {
+func prefixNS(ctx context.Context, ns string) string {
+	if env, ok := ctx.Value(KeyEnv).(string); ok {
+		ns = env + "_" + ns
+	}
+	return ns
+}
 
+func setCache(ctx context.Context, key string, value interface{}, expire time.Duration) error {
 	item := &memcache.Item{
 		Key:        key,
 		Object:     value,
@@ -182,12 +182,10 @@ func (s *Server) SetCache(ctx context.Context, key string, value interface{}, ex
 	if err := memcache.Gob.Set(ctx, item); err != nil {
 		return err
 	}
-
 	return nil
 }
 
-// GetCache gets the cache from memcache
-func (s *Server) GetCache(ctx context.Context, key string, out interface{}) error {
+func getCache(ctx context.Context, key string, out interface{}) error {
 	if _, err := memcache.Gob.Get(ctx, key, out); err != nil && err != memcache.ErrCacheMiss {
 		return err
 	}
@@ -195,8 +193,7 @@ func (s *Server) GetCache(ctx context.Context, key string, out interface{}) erro
 	return nil
 }
 
-// DeleteCache deletes a cache
-func (s *Server) DeleteCache(ctx context.Context, key string) error {
+func deleteCache(ctx context.Context, key string) error {
 	err := memcache.Delete(ctx, key)
 	if err != memcache.ErrCacheMiss {
 		return err
@@ -204,14 +201,13 @@ func (s *Server) DeleteCache(ctx context.Context, key string) error {
 	return nil
 }
 
-// SearchCacheKey returns cache key for current context etc
-func (s *Server) SearchCacheKey(ctx context.Context, ns string, index string, query url.Values) string {
+func searchCacheKey(ctx context.Context, ns string, index string, query url.Values) string {
 	var prefix string
 	cKey := "search:" + ns + ":index:" + index
-	s.GetCache(ctx, cKey, &prefix)
+	getCache(ctx, cKey, &prefix)
 	if prefix == "" {
 		prefix = cKey + strconv.FormatInt(time.Now().Unix(), 10)
-		if err := s.SetCache(ctx, cKey, prefix, time.Hour*12); err != nil {
+		if err := setCache(ctx, cKey, prefix, time.Hour*12); err != nil {
 			log.Println("SearchCacheKey: failed to cache prefix", err)
 		}
 	}
@@ -222,14 +218,24 @@ func (s *Server) SearchCacheKey(ctx context.Context, ns string, index string, qu
 	return hashSha1(prefix + string(b))
 }
 
-// ResetSearchCacheKey renews cache key to invalidate old cache
-func (s *Server) ResetSearchCacheKey(ctx context.Context, ns string, index string) error {
+func resetSearchCacheKey(ctx context.Context, ns string, index string) error {
 	cKey := "search:" + ns + ":index:" + index
-	return s.SetCache(ctx, cKey, cKey+strconv.FormatInt(time.Now().Unix(), 10), time.Hour*24)
+	log.Println("Resetting", cKey)
+	return setCache(ctx, cKey, cKey+strconv.FormatInt(time.Now().Unix(), 10), time.Hour*12)
 }
 
 func hashSha1(text string) string {
 	hasher := sha1.New()
 	hasher.Write([]byte(text))
 	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func newDelayedReset(ctx context.Context, ns string, index string) error {
+	t := taskqueue.NewPOSTTask("/api/search/reset", url.Values{
+		"ns":    {ns},
+		"index": {index},
+	})
+	t.Delay = time.Second * 60
+	_, err := taskqueue.Add(ctx, t, "")
+	return err
 }

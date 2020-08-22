@@ -3,7 +3,12 @@
 
 ###
 
-GET {{baseUrl}}/search/111222/sampleindex?q=mister&ids=true
+GET {{baseUrl}}/search/111222/sampleindex?q=mister&facets=tag
+X-Secret: {{secret}}
+
+###
+
+GET {{baseUrl}}/search/111222/sampleindex?q=mister&facets=ram|4---6|4
 X-Secret: {{secret}}
 
 ###
@@ -22,8 +27,8 @@ X-Secret: {{secret}}
             {"name": "desc", "type": "html", "value": "<strong>phone</strong> specs"},
             {"name": "type", "facet": true, "value": "computer"},
             {"name": "ram", "facet": true, "value": 12},
-            {"name": "tag", "value": "AA"},
-            {"name": "tag", "value": "BB"}
+            {"name": "tag", "facet":true, "value": "AA"},
+            {"name": "tag", "facet":true, "value": "BB"}
         ]},
         {"ID": "t2", "Fields": [
             {"name": "hello", "type": "atom", "value": "earth"},
@@ -34,7 +39,7 @@ X-Secret: {{secret}}
             {"name": "type", "facet": true, "value": "mobile"},
             {"name": "ram", "facet": true, "value": 4},
             {"name": "loc", "type": "geopoint", "value": "10.1,-100.1"},
-            {"name": "tag", "value": "AA"}
+            {"name": "tag", "facet":true, "value": "AA"}
         ]},
         {"ID": "t3", "Fields": [
             {"name": "hello", "type": "atom", "value": "mars"},
@@ -45,7 +50,7 @@ X-Secret: {{secret}}
             {"name": "type", "facet": true, "value": "mobile"},
             {"name": "ram", "facet": true, "value": 1},
             {"name": "loc", "type": "geopoint", "value": "20.5,90.12"},
-            {"name": "tag", "value": "BB"}           
+            {"name": "tag", "facet":true, "value": "BB"}
         ]}
     ]
 }

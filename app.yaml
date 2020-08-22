@@ -11,6 +11,12 @@ automatic_scaling:
   min_instances: 0
 
 handlers:
+  - url: /api/search/reset
+    secure: always
+    redirect_http_response_code: 301
+    script: auto
+    login: admin
+
   - url: /.*
     secure: always
     redirect_http_response_code: 301
