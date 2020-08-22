@@ -72,6 +72,7 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 			log.Println("GetCache: error", err)
 		}
 		if cd.Found {
+			log.Println("CacheHit")
 			if cd.IDsOnly {
 				if cd.IDs == nil {
 					return make([]string, 0)
@@ -261,6 +262,7 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 		)
 		putDocs := func(dIDs []string, ds []interface{}) {
 			defer wg.Done()
+			log.Println("Indexing", len(dIDs), "docs")
 			pIDs, err := index.PutMulti(ctx, dIDs, ds)
 			mu.Lock()
 			if err != nil {
@@ -269,6 +271,13 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 				ids = append(ids, pIDs...)
 			}
 			mu.Unlock()
+		}
+		strVal := func(d interface{}) string {
+			v, ok := d.(string)
+			if !ok {
+				v = fmt.Sprint(d)
+			}
+			return v
 		}
 		for _, doc := range req.Docs {
 			d := &docIndex{
@@ -289,18 +298,18 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 				f := search.Field{Name: field.Name, Derived: field.Derived, Language: field.Language}
 				switch field.Type {
 				case "html":
-					f.Value = search.HTML(field.Value.(string))
+					f.Value = search.HTML(strVal(field.Value))
 				case "atom":
-					f.Value = search.Atom(field.Value.(string))
+					f.Value = search.Atom(strVal(field.Value))
 				case "date", "datetime":
-					v := field.Value.(string)
+					v := strVal(field.Value)
 					if t, err := dateparse.ParseAny(v); err != nil {
 						f.Value = search.Atom(v)
 					} else {
 						f.Value = t
 					}
 				case "geopoint":
-					v := field.Value.(string)
+					v := strVal(field.Value)
 					ll := strings.Split(v, ",")
 					gp := appengine.GeoPoint{}
 					gp.Lat, _ = strconv.ParseFloat(ll[0], 64)
@@ -313,7 +322,7 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 			}
 			docIds = append(docIds, doc.ID)
 			docs = append(docs, d)
-			if len(docIds) >= 2 {
+			if len(docIds) >= 200 {
 				wg.Add(1)
 				go putDocs(docIds, docs)
 				docIds = nil
@@ -349,9 +358,15 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 
 func (s *Server) handleDeleteSearch() http.HandlerFunc {
 	return s.handler(func(r *http.Request) interface{} {
-		ids := r.URL.Query()["id"]
+		q := r.URL.Query()
+		ids := q["id"]
 		if len(ids) == 0 {
-			return badErr{m: "ids not found"}
+			if dd := q["ids"]; len(dd) > 0 {
+				ids = strings.Split(dd[0], ",")
+			}
+			if len(ids) == 0 {
+				return badErr{m: "ids not found"}
+			}
 		}
 		vars := mux.Vars(r)
 		idx := vars["index"]
@@ -393,6 +408,81 @@ func (s *Server) handleDeleteSearch() http.HandlerFunc {
 		}
 		if err3 != nil {
 			return err3
+		}
+		return nil
+	})
+}
+
+func (s *Server) handleDropIndex() http.HandlerFunc {
+	return s.handler(func(r *http.Request) interface{} {
+		vars := mux.Vars(r)
+		idx := vars["index"]
+		ctx := r.Context()
+		ns := prefixNS(ctx, vars["ns"])
+		ctx, err := appengine.Namespace(ctx, ns)
+		if err != nil {
+			return err
+		}
+		index, err := search.Open(idx)
+		if err != nil {
+			return err
+		}
+		var (
+			wg   sync.WaitGroup
+			mu   sync.Mutex
+			errs []error
+			err1 error
+			err2 error
+			ids  []string
+		)
+
+		it := index.List(ctx, &search.ListOptions{IDsOnly: true})
+		delBatch := func(batch []string) {
+			if err := index.DeleteMulti(ctx, batch); err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
+			}
+		}
+		for {
+			id, err := it.Next(nil)
+			if err == search.Done {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			if id != "" {
+				ids = append(ids, id)
+			}
+			if len(ids) > 200 {
+				wg.Add(1)
+				go delBatch(ids)
+				ids = nil
+			}
+		}
+		if len(ids) > 0 {
+			wg.Add(1)
+			go delBatch(ids)
+		}
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			err1 = newDelayedReset(ctx, ns, idx)
+		}()
+		go func() {
+			defer wg.Done()
+			err2 = resetSearchCacheKey(ctx, ns, idx)
+		}()
+		wg.Wait()
+		if err1 != nil {
+			return err1
+		}
+		if err2 != nil {
+			return err2
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("delete errs: %v", errs)
 		}
 		return nil
 	})

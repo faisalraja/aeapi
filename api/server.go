@@ -67,6 +67,7 @@ func NewServer() *Server {
 	srs.HandleFunc("/{ns}/{index}", srv.handleGetSearch()).Methods(http.MethodGet)
 	srs.HandleFunc("/{ns}/{index}", srv.handlePutSearch()).Methods(http.MethodPut)
 	srs.HandleFunc("/{ns}/{index}", srv.handleDeleteSearch()).Methods(http.MethodDelete)
+	srs.HandleFunc("/{ns}/{index}/drop", srv.handleDropIndex()).Methods(http.MethodDelete)
 
 	// catch all
 	r.PathPrefix("/").HandlerFunc(srv.handleCatchAll())
