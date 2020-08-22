@@ -22,18 +22,26 @@ import (
 type (
 	// Server defines how api request is handled
 	Server struct {
-		secret string
-		router *mux.Router
+		liveSecret string
+		testSecret string
+		router     *mux.Router
 	}
 
 	badErr struct {
 		m string
 	}
+
+	ctxKey string
 )
 
 var (
 	errAuth     = fmt.Errorf("Unauthorized")
 	errNotFound = fmt.Errorf("Not found")
+)
+
+const (
+	// KeyEnv added to namespace prefix
+	KeyEnv ctxKey = "env"
 )
 
 // Error bad request
@@ -45,9 +53,9 @@ func (be badErr) Error() string {
 func NewServer() *Server {
 	r := mux.NewRouter()
 
-	srv := &Server{router: r, secret: os.Getenv("SECRET")}
-	if srv.secret == "" {
-		panic("SECRET in app.yaml is empty")
+	srv := &Server{router: r, liveSecret: os.Getenv("LIVE_SECRET"), testSecret: os.Getenv("TEST_SECRET")}
+	if srv.liveSecret == "" || srv.testSecret == "" {
+		panic("LIVE_SECRET or TEST_SECRET in app.yaml is empty")
 	}
 	sr := r.PathPrefix("/api").Subrouter()
 	sr.Use(srv.auth)
@@ -136,12 +144,25 @@ func (s *Server) readJSON(r *http.Request, out interface{}) error {
 
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Secret") != s.secret {
+		ctx := r.Context()
+		secret := r.Header.Get("X-Secret")
+		if secret == s.liveSecret {
+			r = r.WithContext(context.WithValue(ctx, KeyEnv, "live"))
+		} else if secret == s.testSecret {
+			r = r.WithContext(context.WithValue(ctx, KeyEnv, "test"))
+		} else {
 			s.writeError(w, errAuth)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) prefixNS(ctx context.Context, ns string) string {
+	if env, ok := ctx.Value(KeyEnv).(string); ok {
+		ns = env + "_" + ns
+	}
+	return ns
 }
 
 func (s *Server) handleCatchAll() http.HandlerFunc {

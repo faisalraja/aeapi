@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -54,8 +55,9 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 	return s.handler(func(r *http.Request) interface{} {
 		vars := mux.Vars(r)
 		index := vars["index"]
-		ns := vars["ns"]
-		ctx, err := appengine.Namespace(r.Context(), ns)
+		ctx := r.Context()
+		ns := s.prefixNS(ctx, vars["ns"])
+		ctx, err := appengine.Namespace(ctx, ns)
 		if err != nil {
 			return err
 		}
@@ -223,8 +225,9 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 	return s.handler(func(r *http.Request) interface{} {
 		vars := mux.Vars(r)
 		idx := vars["index"]
-		ns := vars["ns"]
-		ctx, err := appengine.Namespace(r.Context(), ns)
+		ctx := r.Context()
+		ns := s.prefixNS(ctx, vars["ns"])
+		ctx, err := appengine.Namespace(ctx, ns)
 		if err != nil {
 			return err
 		}
@@ -236,10 +239,27 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 		if err := s.readJSON(r, &req); err != nil {
 			return err
 		}
-		docsLen := len(req.Docs)
-		docIds := make([]string, docsLen)
-		docs := make([]interface{}, docsLen)
-		for i, doc := range req.Docs {
+		var (
+			wg     sync.WaitGroup
+			mu     sync.Mutex
+			errs   []error
+			err2   error
+			ids    []string
+			docs   []interface{}
+			docIds []string
+		)
+		putDocs := func(dIDs []string, ds []interface{}) {
+			defer wg.Done()
+			pIDs, err := index.PutMulti(ctx, dIDs, ds)
+			mu.Lock()
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				ids = append(ids, pIDs...)
+			}
+			mu.Unlock()
+		}
+		for _, doc := range req.Docs {
 			d := &docIndex{
 				ID:     doc.ID,
 				Fields: make([]search.Field, len(doc.Fields)),
@@ -280,27 +300,27 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 				}
 				d.Fields[j] = f
 			}
-			docIds[i] = doc.ID
-			docs[i] = d
+			docIds = append(docIds, doc.ID)
+			docs = append(docs, d)
+			if len(docIds) >= 2 {
+				wg.Add(1)
+				go putDocs(docIds, docs)
+				docIds = nil
+				docs = nil
+			}
 		}
-		var (
-			wg   sync.WaitGroup
-			err1 error
-			err2 error
-			ids  []string
-		)
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			ids, err1 = index.PutMulti(ctx, docIds, docs)
-		}()
+		if len(docIds) > 0 {
+			wg.Add(1)
+			go putDocs(docIds, docs)
+		}
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			err2 = s.ResetSearchCacheKey(ctx, ns, idx)
 		}()
 		wg.Wait()
-		if err1 != nil {
-			return err1
+		if len(errs) > 0 {
+			return fmt.Errorf("put errs: %v", errs)
 		}
 		if err2 != nil {
 			return err2
@@ -317,8 +337,9 @@ func (s *Server) handleDeleteSearch() http.HandlerFunc {
 		}
 		vars := mux.Vars(r)
 		idx := vars["index"]
-		ns := vars["ns"]
-		ctx, err := appengine.Namespace(r.Context(), ns)
+		ctx := r.Context()
+		ns := s.prefixNS(ctx, vars["ns"])
+		ctx, err := appengine.Namespace(ctx, ns)
 		if err != nil {
 			return err
 		}

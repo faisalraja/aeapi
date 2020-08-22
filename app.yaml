@@ -1,24 +1,27 @@
 runtime: go111
 
+instance_class: F1
 automatic_scaling:
   max_concurrent_requests: 80
-  target_cpu_utilization: 0.8
+  min_pending_latency: 250ms
+  max_pending_latency: 500ms
+  target_cpu_utilization: 0.9
   target_throughput_utilization: 0.9
   max_instances: 10
   min_instances: 0
 
 skip_files:
-- ^(.*/)?#.*#$
-- ^(.*/)?.*~$
-- ^(.*/)?.*\.py[co]$
-- ^(.*/)?.*/RCS/.*$
-- ^(.*/)?\..*$
+  - ^(.*/)?#.*#$
+  - ^(.*/)?.*~$
+  - ^(.*/)?.*\.py[co]$
+  - ^(.*/)?.*/RCS/.*$
+  - ^(.*/)?\..*$
 
 handlers:
-- url: /.*
-  secure: always
-  redirect_http_response_code: 301
-  script: auto
+  - url: /.*
+    secure: always
+    redirect_http_response_code: 301
+    script: auto
 
-env_variables:
-  SECRET: 'abc123'
+includes:
+  - env.yaml
