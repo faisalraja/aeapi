@@ -7,7 +7,7 @@ Full Text Search system from AppEngine 1st gen. Since it's hard to find a cost e
 Install gcloud sdk and app-engine-go component. Refer to github workflow for manual or automated deployment.
 
 ```bash
-dev_appserver.py app.yaml --log_level=debug
+dev_appserver.py app.yaml --log_level=debug --port=8110
 ```
 
 ## Deploy using github workflow
@@ -29,3 +29,12 @@ Roles to deploy
 - Cloud Build Editor
 - Service Account User
 - Viewer
+
+## Docker Image for development
+
+Add to workflow later
+
+```bash
+docker build -t altlimit/aefts:v0.0.1 -f build.Dockerfile
+docker push altlimit/aefts:v0.0.1
+```
