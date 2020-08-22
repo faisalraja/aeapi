@@ -1,8 +1,7 @@
 runtime: go111
-service: aeapi
 
 automatic_scaling:
-  max_concurrent_requests: 50
+  max_concurrent_requests: 80
   target_cpu_utilization: 0.8
   target_throughput_utilization: 0.9
   max_instances: 10

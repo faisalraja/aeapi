@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 
-	"github.com/faisalraja/aeapi/v1/api"
+	"github.com/faisalraja/aefts/v1/api"
 	"google.golang.org/appengine"
 )
 

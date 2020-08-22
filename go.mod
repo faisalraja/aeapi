@@ -1,4 +1,4 @@
-module github.com/faisalraja/aeapi/v1
+module github.com/faisalraja/aefts/v1
 
 go 1.11
 

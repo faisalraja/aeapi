@@ -1,11 +1,14 @@
 package api
 
 import (
-	"fmt"
+	"encoding/json"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"google.golang.org/appengine"
 
@@ -34,45 +37,74 @@ func (di *docIndex) Save() ([]search.Field, *search.DocumentMetadata, error) {
 
 func (s *Server) handleGetSearch() http.HandlerFunc {
 	type facetResult struct {
-		Value interface{}
-		Start float64
-		End   float64
-		Count int
+		Value interface{} `json:"value"`
+		Start float64     `json:"start"`
+		End   float64     `json:"end"`
+		Count int         `json:"count"`
 	}
 	type facet struct {
-		Name   string
-		Result []facetResult
+		Name   string        `json:"name"`
+		Result []facetResult `json:"result"`
 	}
 	type response struct {
-		Result []docIndex
-		Facets []facet
-		Cursor string
+		Result []docIndex `json:"result"`
+		Facets []facet    `json:"facets"`
+		Cursor string     `json:"cursor"`
 	}
-	return s.handler(func(r *http.Request) (int, interface{}) {
-		index := mux.Vars(r)["index"]
+	return s.handler(func(r *http.Request) interface{} {
+		vars := mux.Vars(r)
+		index := vars["index"]
+		ns := vars["ns"]
+		ctx, err := appengine.Namespace(r.Context(), ns)
+		if err != nil {
+			return err
+		}
 		query := r.URL.Query()
+
+		type cachedDocs struct {
+			Found bool
+			IDs   []string
+			Data  []byte
+		}
+		var resp response
+		cd := &cachedDocs{}
+		cKey := s.SearchCacheKey(ctx, ns, index, query)
+		if err := s.GetCache(ctx, cKey, cd); err != nil {
+			log.Println("GetCache: error", err)
+		}
+		if cd.Found {
+			if cd.IDs != nil {
+				return cd.IDs
+			}
+			if err := json.Unmarshal(cd.Data, &resp); err != nil {
+				log.Println("UnmarshalErr", err)
+			} else {
+				return resp
+			}
+		}
+
 		if len(query["q"]) == 0 {
-			return http.StatusBadRequest, fmt.Errorf("Query string missing")
+			return badErr{m: "Query string missing"}
 		}
 		opt := &search.SearchOptions{}
-		if len(query["Limit"]) == 1 {
-			limit, _ := strconv.Atoi(query["Limit"][0])
+		if len(query["limit"]) == 1 {
+			limit, _ := strconv.Atoi(query["limit"][0])
 			opt.Limit = limit
 		}
-		if len(query["IDsOnly"]) == 1 {
-			opt.IDsOnly = query["IDsOnly"][0] == "true"
+		if len(query["ids"]) == 1 {
+			opt.IDsOnly = query["ids"][0] == "true"
 		}
-		if len(query["Fields"]) > 0 {
-			opt.Fields = query["Fields"]
+		if len(query["fields"]) > 0 {
+			opt.Fields = query["fields"]
 		}
-		if len(query["Cursor"]) == 1 {
-			opt.Cursor = search.Cursor(query["Cursor"][0])
+		if len(query["cursor"]) == 1 {
+			opt.Cursor = search.Cursor(query["cursor"][0])
 		}
-		if len(query["Facets"]) > 0 {
-			if query["Facets"][0] == "auto" {
+		if len(query["facets"]) > 0 {
+			if query["facets"][0] == "auto" {
 				opt.Facets = append(opt.Facets, search.AutoFacetDiscovery(0, 0))
 			} else {
-				for _, facet := range query["Facets"] {
+				for _, facet := range query["facets"] {
 					ff := strings.Split(facet, "|")
 					vals := make([]interface{}, 0)
 					if len(ff) >= 2 {
@@ -99,13 +131,12 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 			}
 		}
 
-		var resp response
 		idx, err := search.Open(index)
 		if err != nil {
-			return http.StatusInternalServerError, err
+			return err
 		}
 		var ids []string
-		it := idx.Search(r.Context(), query["q"][0], opt)
+		it := idx.Search(ctx, query["q"][0], opt)
 		for {
 			var d docIndex
 			id, err := it.Next(&d)
@@ -114,7 +145,7 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 				break
 			}
 			if err != nil {
-				return http.StatusInternalServerError, err
+				return err
 			}
 			if id != "" {
 				d.ID = id
@@ -128,7 +159,7 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 		}
 		facets, err := it.Facets()
 		if err != nil {
-			return http.StatusInternalServerError, err
+			return err
 		}
 		resp.Facets = make([]facet, len(facets))
 		for i, results := range facets {
@@ -150,22 +181,37 @@ func (s *Server) handleGetSearch() http.HandlerFunc {
 				resp.Facets[i].Result = append(resp.Facets[i].Result, fr)
 			}
 		}
+		cd.Found = true
 		if opt.IDsOnly {
-			return http.StatusOK, ids
+			cd.IDs = ids
+		} else {
+			cd.Data, err = json.Marshal(resp)
+			if err != nil {
+				log.Println("MarshalErr", err)
+				cd.Found = false
+			}
 		}
-		return http.StatusOK, resp
+		if cd.Found {
+			if err := s.SetCache(ctx, cKey, cd, time.Hour*12); err != nil {
+				log.Println("SetCache error", err)
+			}
+		}
+		if opt.IDsOnly {
+			return cd.IDs
+		}
+		return resp
 	})
 }
 
 func (s *Server) handlePutSearch() http.HandlerFunc {
 	type field struct {
-		Name     string
-		Value    interface{}
-		Type     string
-		Facet    bool
-		Rank     int
-		Derived  bool
-		Language string
+		Name     string      `json:"name"`
+		Value    interface{} `json:"value"`
+		Type     string      `json:"type"`
+		Facet    bool        `json:"facet"`
+		Rank     int         `json:"rank"`
+		Derived  bool        `json:"derived"`
+		Language string      `json:"language"`
 	}
 	type doc struct {
 		ID     string
@@ -174,15 +220,21 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 	type request struct {
 		Docs []doc
 	}
-	return s.handler(func(r *http.Request) (int, interface{}) {
-		idx := mux.Vars(r)["index"]
+	return s.handler(func(r *http.Request) interface{} {
+		vars := mux.Vars(r)
+		idx := vars["index"]
+		ns := vars["ns"]
+		ctx, err := appengine.Namespace(r.Context(), ns)
+		if err != nil {
+			return err
+		}
 		index, err := search.Open(idx)
 		if err != nil {
-			return http.StatusInternalServerError, err
+			return err
 		}
 		var req request
 		if err := s.readJSON(r, &req); err != nil {
-			return http.StatusInternalServerError, err
+			return err
 		}
 		docsLen := len(req.Docs)
 		docIds := make([]string, docsLen)
@@ -231,28 +283,70 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 			docIds[i] = doc.ID
 			docs[i] = d
 		}
-		ids, err := index.PutMulti(r.Context(), docIds, docs)
-		if err != nil {
-			return http.StatusInternalServerError, err
+		var (
+			wg   sync.WaitGroup
+			err1 error
+			err2 error
+			ids  []string
+		)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			ids, err1 = index.PutMulti(ctx, docIds, docs)
+		}()
+		go func() {
+			defer wg.Done()
+			err2 = s.ResetSearchCacheKey(ctx, ns, idx)
+		}()
+		wg.Wait()
+		if err1 != nil {
+			return err1
 		}
-		return http.StatusOK, ids
+		if err2 != nil {
+			return err2
+		}
+		return ids
 	})
 }
 
 func (s *Server) handleDeleteSearch() http.HandlerFunc {
-	return s.handler(func(r *http.Request) (int, interface{}) {
+	return s.handler(func(r *http.Request) interface{} {
 		ids := r.URL.Query()["id"]
 		if len(ids) == 0 {
-			return http.StatusBadRequest, fmt.Errorf("ids not found")
+			return badErr{m: "ids not found"}
 		}
-		idx := mux.Vars(r)["index"]
+		vars := mux.Vars(r)
+		idx := vars["index"]
+		ns := vars["ns"]
+		ctx, err := appengine.Namespace(r.Context(), ns)
+		if err != nil {
+			return err
+		}
 		index, err := search.Open(idx)
 		if err != nil {
-			return http.StatusInternalServerError, err
+			return err
 		}
-		if err := index.DeleteMulti(r.Context(), ids); err != nil {
-			return http.StatusInternalServerError, err
+		var (
+			wg   sync.WaitGroup
+			err1 error
+			err2 error
+		)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			err1 = index.DeleteMulti(ctx, ids)
+		}()
+		go func() {
+			defer wg.Done()
+			err2 = s.ResetSearchCacheKey(ctx, ns, idx)
+		}()
+		wg.Wait()
+		if err1 != nil {
+			return err1
 		}
-		return http.StatusOK, nil
+		if err2 != nil {
+			return err2
+		}
+		return nil
 	})
 }

@@ -3,73 +3,54 @@
 
 ###
 
-GET {{baseUrl}}/memcache?key=a&key=b&key=c
+GET {{baseUrl}}/search/111222/sampleindex?q=mister&ids=true
 X-Secret: {{secret}}
 
 ###
 
-POST {{baseUrl}}/memcache
-Content-Type: application/json
-X-Secret: {{secret}}
-
-{
-    "Items": [
-        {"Key": "a", "Value": "YWFhYWFhYQ=="},
-        {"Key": "b", "Value": "YWFhYWFhYQ=="}
-    ]
-}
-
-###
-
-DELETE {{baseUrl}}/memcache?key=a
-X-Secret: {{secret}}
-
-###
-
-GET {{baseUrl}}/search/sampleindex?q=mister&Facets=auto
-X-Secret: {{secret}}
-
-###
-
-PUT {{baseUrl}}/search/sampleindex
+PUT {{baseUrl}}/search/111222/sampleindex
 Content-Type: application/json
 X-Secret: {{secret}}
 
 {
     "Docs": [
         {"ID": "t1", "Fields": [
-            {"Name": "hello", "Type": "atom", "Derived": true, "Value": "world"},
-            {"Name": "date", "Type": "date", "Value": "1/2/2020"},
-            {"Name": "total", "Value": 20.25},
-            {"Name": "content", "Value": "mister cat"},
-            {"Name": "desc", "Type": "html", "Value": "<strong>phone</strong> specs"},
-            {"Name": "type", "Facet": true, "Value": "computer"},
-            {"Name": "ram", "Facet": true, "Value": 12}
+            {"name": "hello", "type": "atom", "derived": true, "value": "world"},
+            {"name": "date", "type": "date", "value": "1/2/2020"},
+            {"name": "total", "value": 20.25},
+            {"name": "content", "value": "mister cat"},
+            {"name": "desc", "type": "html", "value": "<strong>phone</strong> specs"},
+            {"name": "type", "facet": true, "value": "computer"},
+            {"name": "ram", "facet": true, "value": 12},
+            {"name": "tag", "value": "AA"},
+            {"name": "tag", "value": "BB"}
         ]},
         {"ID": "t2", "Fields": [
-            {"Name": "hello", "Type": "atom", "Value": "earth"},
-            {"Name": "date", "Type": "date", "Value": "1/3/2020"},
-            {"Name": "total", "Value": 30},
-            {"Name": "content", "Value": "mister mice"},
-            {"Name": "desc", "Type": "html", "Value": "<strong>phone</strong> call"},
-            {"Name": "type", "Facet": true, "Value": "mobile"},
-            {"Name": "ram", "Facet": true, "Value": 4},
-            {"Name": "loc", "Type": "geopoint", "Value": "10.1,-100.1"}
+            {"name": "hello", "type": "atom", "value": "earth"},
+            {"name": "date", "type": "date", "value": "1/3/2020"},
+            {"name": "total", "value": 30},
+            {"name": "content", "value": "mister mice"},
+            {"name": "desc", "type": "html", "value": "<strong>phone</strong> call"},
+            {"name": "type", "facet": true, "value": "mobile"},
+            {"name": "ram", "facet": true, "value": 4},
+            {"name": "loc", "type": "geopoint", "value": "10.1,-100.1"},
+            {"name": "tag", "value": "AA"}
         ]},
         {"ID": "t3", "Fields": [
-            {"Name": "hello", "Type": "atom", "Value": "mars"},
-            {"Name": "date", "Type": "date", "Value": "1/5/2020"},
-            {"Name": "total", "Value": 23.5},
-            {"Name": "content", "Value": "mister dog"},
-            {"Name": "desc", "Type": "html", "Value": "<strong>phone</strong> text"},
-            {"Name": "type", "Facet": true, "Value": "mobile"},
-            {"Name": "ram", "Facet": true, "Value": 1},
-            {"Name": "loc", "Type": "geopoint", "Value": "20.5,90.12"}
+            {"name": "hello", "type": "atom", "value": "mars"},
+            {"name": "date", "type": "date", "value": "1/5/2020"},
+            {"name": "total", "value": 23.5},
+            {"name": "content", "value": "mister dog"},
+            {"name": "desc", "type": "html", "value": "<strong>phone</strong> text"},
+            {"name": "type", "facet": true, "value": "mobile"},
+            {"name": "ram", "facet": true, "value": 1},
+            {"name": "loc", "type": "geopoint", "value": "20.5,90.12"},
+            {"name": "tag", "value": "BB"}           
         ]}
     ]
 }
 
 ###
 
-DELETE http://localhost:8080/api/search/sampleindex?id=t1&id=t2&id=t3
+DELETE {{baseUrl}}/search/111222/sampleindex?id=t1&id=t2&id=t3
 X-Secret: {{secret}}
