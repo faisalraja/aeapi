@@ -18,8 +18,8 @@ Content-Type: application/json
 X-Secret: {{secret}}
 
 {
-    "Docs": [
-        {"ID": "t1", "Fields": [
+    "docs": [
+        {"id": "t1", "fields": [
             {"name": "hello", "type": "atom", "derived": true, "value": "world"},
             {"name": "date", "type": "date", "value": "1/2/2020"},
             {"name": "total", "value": 20.25},
@@ -30,7 +30,7 @@ X-Secret: {{secret}}
             {"name": "tag", "facet":true, "value": "AA"},
             {"name": "tag", "facet":true, "value": "BB"}
         ]},
-        {"ID": "t2", "Fields": [
+        {"id": "t2", "fields": [
             {"name": "hello", "type": "atom", "value": "earth"},
             {"name": "date", "type": "date", "value": "1/3/2020"},
             {"name": "total", "value": 30},
@@ -41,7 +41,7 @@ X-Secret: {{secret}}
             {"name": "loc", "type": "geopoint", "value": "10.1,-100.1"},
             {"name": "tag", "facet":true, "value": "AA"}
         ]},
-        {"ID": "t3", "Fields": [
+        {"id": "t3", "fields": [
             {"name": "hello", "type": "atom", "value": "mars"},
             {"name": "date", "type": "date", "value": "1/5/2020"},
             {"name": "total", "value": 23.5},

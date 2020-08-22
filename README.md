@@ -35,6 +35,6 @@ Roles to deploy
 Add to workflow later
 
 ```bash
-docker build -t altlimit/aefts:v0.0.1 -f build.Dockerfile
+docker build -t altlimit/aefts:v0.0.1 -f build.Dockerfile .
 docker push altlimit/aefts:v0.0.1
 ```

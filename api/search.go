@@ -226,11 +226,11 @@ func (s *Server) handlePutSearch() http.HandlerFunc {
 		Language string      `json:"language"`
 	}
 	type doc struct {
-		ID     string
-		Fields []field
+		ID     string  `json:"id"`
+		Fields []field `json:"fields"`
 	}
 	type request struct {
-		Docs []doc
+		Docs []doc `json:"docs"`
 	}
 	return s.handler(func(r *http.Request) interface{} {
 		vars := mux.Vars(r)
