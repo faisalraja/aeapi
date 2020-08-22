@@ -15,6 +15,6 @@ jobs:
       - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
         with:
           service_account_key: ${{ secrets.GCP_KEY }}
-      - run: echo "${{ secrets.APP_ENV }}" | base64 --decode > app/env.yaml
+      - run: echo "${{ secrets.APP_ENV }}" | base64 --decode > env.yaml
       - run: gcloud components install app-engine-go -q
       - run: gcloud app deploy app.yaml --project=${{ secrets.PROJECT_ID }} --version=v${GITHUB_RUN_NUMBER} -q
