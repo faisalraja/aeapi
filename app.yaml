@@ -10,13 +10,6 @@ automatic_scaling:
   max_instances: 10
   min_instances: 0
 
-skip_files:
-  - ^(.*/)?#.*#$
-  - ^(.*/)?.*~$
-  - ^(.*/)?.*\.py[co]$
-  - ^(.*/)?.*/RCS/.*$
-  - ^(.*/)?\..*$
-
 handlers:
   - url: /.*
     secure: always
