@@ -438,6 +438,7 @@ func (s *Server) handleDropIndex() http.HandlerFunc {
 
 		it := index.List(ctx, &search.ListOptions{IDsOnly: true})
 		delBatch := func(batch []string) {
+			defer wg.Done()
 			if err := index.DeleteMulti(ctx, batch); err != nil {
 				mu.Lock()
 				errs = append(errs, err)
